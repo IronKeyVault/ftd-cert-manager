@@ -1,0 +1,17 @@
+[Unit]
+Description=FTD Certificate Renewal Timer
+Requires=ftd-cert-renew.service
+
+[Timer]
+# Run daily at 3:00 AM
+OnCalendar=daily
+OnCalendar=*-*-* 03:00:00
+
+# Run 5 minutes after boot if the system was off at the scheduled time
+Persistent=true
+
+# Randomize the start time by up to 1 hour to avoid load spikes
+RandomizedDelaySec=3600
+
+[Install]
+WantedBy=timers.target

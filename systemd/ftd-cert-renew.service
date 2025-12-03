@@ -1,0 +1,22 @@
+[Unit]
+Description=FTD Certificate Renewal Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=kasperadm
+WorkingDirectory=/home/kasperadm/projects/ftd-cert-manager
+ExecStart=/home/kasperadm/projects/ftd-cert-manager/venv/bin/python /home/kasperadm/projects/ftd-cert-manager/cert_manager.py
+
+# Security settings
+PrivateTmp=true
+NoNewPrivileges=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ftd-cert-renew
+
+[Install]
+WantedBy=multi-user.target
