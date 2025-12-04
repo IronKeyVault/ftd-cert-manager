@@ -2,6 +2,8 @@
 
 Automated certificate management for Cisco FTD 1010 via FMC using Let's Encrypt and wingpy.
 
+**NEW**: Now supports Bitwarden password manager for secure credential storage! See [BITWARDEN.md](BITWARDEN.md)
+
 ## Overview
 
 This project automates the process of:
@@ -9,6 +11,12 @@ This project automates the process of:
 2. Automatically renewing certificates
 3. Uploading certificates to Cisco FMC via API (wingpy)
 4. Configuring certificates for use on FTD devices
+
+**Security Features:**
+- 🔐 Bitwarden integration for secure credential storage (optional)
+- 📁 Fallback to `.env` files with restrictive permissions
+- 🔒 Automatic credential cleanup after use
+- 🛡️ No hardcoded passwords in code
 
 ## Prerequisites
 
@@ -18,6 +26,7 @@ This project automates the process of:
 - FTD device registered in FMC
 - Cloudflare account (for automatic DNS validation)
 - Systemd (for automatic renewal)
+- **(Optional)** Bitwarden CLI for secure credential management
 
 ## Installation
 
@@ -41,7 +50,25 @@ This will:
 - Create required directories
 - Set correct permissions
 
-### 3. Configure environment variables
+### 3. Configure credentials
+
+**Option A: Using Bitwarden (Recommended for production)**
+
+See detailed guide: [BITWARDEN.md](BITWARDEN.md)
+
+Quick start:
+```bash
+# Install Bitwarden CLI
+npm install -g @bitwarden/cli
+
+# Create vault item with your credentials
+# See BITWARDEN.md for complete setup
+
+# Run with Bitwarden
+./run_with_bitwarden.sh
+```
+
+**Option B: Using .env file**
 
 Copy `.env.example` to `.env` and fill in your information:
 

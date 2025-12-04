@@ -2,6 +2,7 @@
 """
 Certificate Manager for FTD via FMC
 Manages Let's Encrypt SSL certificate renewal and upload to Cisco FMC/FTD
+Supports Bitwarden for secure credential storage
 """
 
 import os
@@ -13,12 +14,66 @@ from pathlib import Path
 from dotenv import load_dotenv
 from wingpy import CiscoFMC
 
-# Load environment variables
+# Try to import Bitwarden helper (optional)
+try:
+    from bitwarden_helper import get_credentials_from_bitwarden
+    BITWARDEN_AVAILABLE = True
+except ImportError:
+    BITWARDEN_AVAILABLE = False
+    logging.info("Bitwarden helper not available, using .env only")
+
+# Load environment variables from .env (fallback)
 load_dotenv()
+
+def load_config():
+    """
+    Load configuration from Bitwarden (if available) or .env file
+    Priority: Environment variables > Bitwarden > .env file
+    """
+    config = {}
+    
+    # Try Bitwarden first if BW_SESSION is set
+    if BITWARDEN_AVAILABLE and os.getenv('BW_SESSION'):
+        try:
+            logging.info("Attempting to load credentials from Bitwarden...")
+            bw_credentials = get_credentials_from_bitwarden()
+            
+            # Use Bitwarden values if they exist, otherwise fall back to .env
+            for key, value in bw_credentials.items():
+                if value:  # Only use non-None values from Bitwarden
+                    config[key] = value
+                    logging.info(f"Loaded {key} from Bitwarden")
+        except Exception as e:
+            logging.warning(f"Failed to load from Bitwarden: {e}")
+            logging.info("Falling back to .env file")
+    else:
+        if not os.getenv('BW_SESSION'):
+            logging.info("BW_SESSION not set, using .env file")
+    
+    # Load from environment/dotenv (fallback or override)
+    env_vars = {
+        'FMC_HOST': os.getenv('FMC_HOST'),
+        'FMC_USERNAME': os.getenv('FMC_USERNAME'),
+        'FMC_PASSWORD': os.getenv('FMC_PASSWORD'),
+        'DOMAIN_NAME': os.getenv('DOMAIN_NAME'),
+        'FTD_DEVICE_NAME': os.getenv('FTD_DEVICE_NAME'),
+        'FTD_CERT_NAME': os.getenv('FTD_CERT_NAME', 'VPN-Certificate'),
+        'CLOUDFLARE_TOKEN': os.getenv('CLOUDFLARE_TOKEN'),
+    }
+    
+    # Merge: env vars override Bitwarden
+    for key, value in env_vars.items():
+        if value or key not in config:
+            config[key] = value
+    
+    return config
+
+# Load configuration
+CONFIG = load_config()
 
 # Configuration
 EMAIL = os.getenv('LETSENCRYPT_EMAIL')
-DOMAIN = os.getenv('DOMAIN_NAME')
+DOMAIN = CONFIG.get('DOMAIN_NAME')
 CERT_OUTPUT_DIR = Path(os.getenv('CERT_OUTPUT_DIR', './certs'))
 LOG_DIR = Path(os.getenv('LOG_DIR', './logs'))
 STAGING = os.getenv('CERTBOT_STAGING', 'false').lower() == 'true'
@@ -26,16 +81,19 @@ WEBROOT = os.getenv('CERTBOT_WEBROOT')
 DNS_PROVIDER = os.getenv('CERTBOT_DNS_PROVIDER', '')
 
 # FMC Configuration
-FMC_HOST = os.getenv('FMC_HOST')
-FMC_USERNAME = os.getenv('FMC_USERNAME')
-FMC_PASSWORD = os.getenv('FMC_PASSWORD')
+FMC_HOST = CONFIG.get('FMC_HOST')
+FMC_USERNAME = CONFIG.get('FMC_USERNAME')
+FMC_PASSWORD = CONFIG.get('FMC_PASSWORD')
 FMC_VERIFY_SSL = os.getenv('FMC_VERIFY_SSL', 'false').lower() == 'true'
 
 # FTD Configuration
-FTD_DEVICE_NAME = os.getenv('FTD_DEVICE_NAME')
-FTD_CERT_NAME_BASE = os.getenv('FTD_CERT_NAME', 'VPN-Certificate')
+FTD_DEVICE_NAME = CONFIG.get('FTD_DEVICE_NAME')
+FTD_CERT_NAME_BASE = CONFIG.get('FTD_CERT_NAME', 'VPN-Certificate')
 # Add year-month to certificate name (e.g., RA-VPN-Certificate-2025-12)
 FTD_CERT_NAME = f"{FTD_CERT_NAME_BASE}-{datetime.now().strftime('%Y-%m')}"
+
+# Cloudflare token handling
+CLOUDFLARE_TOKEN = CONFIG.get('CLOUDFLARE_TOKEN')
 
 # Setup logging
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -79,6 +137,27 @@ def request_certificate():
     
     # Create certificate output directory
     CERT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # Handle Cloudflare credentials
+    if DNS_PROVIDER == 'cloudflare':
+        cloudflare_creds_file = Path('.cloudflare-credentials')
+        
+        # If Cloudflare token is available (from Bitwarden or env), write it to file
+        if CLOUDFLARE_TOKEN:
+            logger.info("Writing Cloudflare credentials from configuration")
+            try:
+                cloudflare_creds_file.write_text(
+                    f"# Cloudflare API token\n"
+                    f"dns_cloudflare_api_token = {CLOUDFLARE_TOKEN}\n"
+                )
+                cloudflare_creds_file.chmod(0o600)
+                logger.info("Cloudflare credentials file created")
+            except Exception as e:
+                logger.error(f"Failed to write Cloudflare credentials: {e}")
+                return False
+        elif not cloudflare_creds_file.exists():
+            logger.error("Cloudflare credentials not found in Bitwarden or .env, and .cloudflare-credentials file missing")
+            return False
     
     # Check if running as root
     is_root = os.geteuid() == 0
