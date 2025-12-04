@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily check for RA VPN certificate expiry
+Requires=cert-expiry-check.service
+
+[Timer]
+OnCalendar=daily
+OnBootSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

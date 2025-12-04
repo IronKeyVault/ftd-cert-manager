@@ -1,0 +1,10 @@
+[Unit]
+Description=Check RA VPN Certificate Expiry
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=kasperadm
+ExecStart=/home/kasperadm/projects/ftd-cert-manager/check_cert_expiry.sh
+StandardOutput=journal
+StandardError=journal

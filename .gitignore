@@ -19,9 +19,12 @@ build/
 certs/*.pem
 certs/*.key
 certs/*.crt
+certs/*.p12
 *.pem
 *.key
 *.crt
+*.csr
+*.p12
 
 # Logs
 logs/*.log
