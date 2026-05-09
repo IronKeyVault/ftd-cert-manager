@@ -320,6 +320,74 @@ def cmd_export_env(_args) -> int:
     return 0
 
 
+def _decode_pkcs12_cert_info(b64: str, password: str):
+    """Return {subject, not_before, not_after} from a PKCS12 base64 blob, or None."""
+    if not b64 or not password:
+        return None
+    try:
+        import base64 as _b64
+        from cryptography.hazmat.primitives.serialization import pkcs12
+        raw = _b64.b64decode(b64.replace("\r", "").replace("\n", ""))
+        _, cert, _ = pkcs12.load_key_and_certificates(raw, password.encode())
+        if not cert:
+            return None
+        return {
+            "subject": cert.subject.rfc4514_string(),
+            "issuer": cert.issuer.rfc4514_string(),
+            "not_before": cert.not_valid_before_utc.strftime("%Y-%m-%d"),
+            "not_after": cert.not_valid_after_utc.strftime("%Y-%m-%d"),
+        }
+    except Exception:
+        return None
+
+
+def cmd_list(_args) -> int:
+    creds = CredentialManager.get_credentials()
+    fmc_base_url = ConfigManager.get("fmc_base_url")
+    if not creds or not fmc_base_url:
+        print("Error: Configuration incomplete. Run: ftd-cert-manager --setup")
+        return 1
+
+    fmc = CiscoFMC(
+        base_url=fmc_base_url,
+        username=creds["fmc_username"],
+        password=creds["fmc_password"],
+        verify=False,
+    )
+    info = fmc.get("/api/fmc_platform/v1/info/domain")
+    info = info.json() if hasattr(info, "json") else info
+    domain_uuid = info["items"][0]["uuid"]
+
+    enrollments = fmc.get_all(
+        f"/api/fmc_config/v1/domain/{domain_uuid}/object/certenrollments",
+        expanded=True,
+    )
+    if not enrollments:
+        print("No certificate enrollments in FMC.")
+        return 0
+
+    pkcs12_password = creds.get("pkcs12_password", "")
+    print(f"\nCertificate enrollments in FMC ({len(enrollments)}):\n")
+    for e in sorted(enrollments, key=lambda x: x.get("name", "")):
+        name = e.get("name", "?")
+        etype = e.get("enrollmentType", "?")
+        eid = e.get("id", "?")
+        print(f"  {name}")
+        print(f"    type: {etype}    id: {eid}")
+        b64 = (e.get("pkcs12Content") or {}).get("base64Certificate")
+        cert = _decode_pkcs12_cert_info(b64, pkcs12_password)
+        if cert:
+            print(f"    cert: {cert['subject']}")
+            print(f"    issuer: {cert['issuer']}")
+            print(f"    valid: {cert['not_before']} → {cert['not_after']}")
+        elif b64:
+            print("    cert: (cannot decode — wrong password?)")
+        else:
+            print("    cert: (no PKCS12 content)")
+        print()
+    return 0
+
+
 def cmd_import(args) -> int:
     if args.renew:
         script = Path(__file__).resolve().parent.parent / "renew_cert.sh"
@@ -402,6 +470,8 @@ def main(argv=None) -> int:
     group.add_argument("--write-cf-creds", metavar="PATH",
                        help="Materialize the Cloudflare token to PATH (chmod 600); "
                             "used internally by renew_cert.sh")
+    group.add_argument("--list", dest="do_list", action="store_true",
+                       help="List all certificate enrollments in FMC")
 
     parser.add_argument("--pkcs12-file", default="vpn-complete.p12",
                         help="Path to PKCS12 bundle (default: vpn-complete.p12)")
@@ -428,6 +498,8 @@ def main(argv=None) -> int:
         return cmd_export_env(args)
     if args.write_cf_creds:
         return cmd_write_cf_creds(args)
+    if args.do_list:
+        return cmd_list(args)
     return 1
 
 
