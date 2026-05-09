@@ -335,10 +335,58 @@ def cmd_import(args) -> int:
     return import_pkcs12(pkcs12_file=args.pkcs12_file)
 
 
+USAGE_EPILOG = """
+Workflow
+--------
+First-time setup:
+  ftd-cert-manager --setup
+    Prompts for FMC URL, credentials, FTD device (picked from FMC API),
+    PKCS12 password, Let's Encrypt email, Cloudflare API token.
+
+Renewal (every ~75 days, or when expiry-warning email arrives):
+  ftd-cert-manager --import --renew
+    Runs renew_cert.sh (Let's Encrypt DNS-01 via Cloudflare → fresh
+    PKCS12), then POSTs a new enrollment named '<base>-YYYY-MM' in
+    FMC. Old enrollments stay for rollback.
+
+  Then in FMC GUI (manual, no public REST endpoint exists):
+    Devices > Certificates > Add → select the new enrollment + FTD,
+    click Add. FMC auto-deploys to the device.
+
+Just regenerate cert (no FMC import):
+  ./renew_cert.sh
+
+Just upload existing PKCS12 (skip Let's Encrypt):
+  ftd-cert-manager --import
+
+Inspect / reset:
+  ftd-cert-manager --config        Show current config + storage backend
+  ftd-cert-manager --clear         Wipe credentials and config
+
+Storage
+-------
+  Secrets in OS keyring (SecretService) with Fernet-encrypted file
+  fallback at ~/ftd-cert-manager/credentials.json. Non-secrets in
+  ~/ftd-cert-manager/config.json.
+
+  Cloudflare API token requires User-scope token (not Account-scope)
+  with permissions: Zone:Zone:Read + Zone:DNS:Edit on the domain.
+  Use the 'Edit zone DNS' template under My Profile > API Tokens.
+
+Long term
+---------
+  When FTD is upgraded to 10.0+, switch to native ACME-trustpoint in
+  FMC. The FTD will then auto-renew its own cert and this tool becomes
+  unnecessary.
+"""
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="ftd-cert-manager",
         description="Automated Let's Encrypt certificate management for Cisco FTD RA VPN",
+        epilog=USAGE_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--setup", action="store_true",
